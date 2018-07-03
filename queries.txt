@@ -1,0 +1,129 @@
+##################### Egyszerû lekérdezések #########################
+
+# 1. Mely 3 bûncselekmény típusból követték el a legtöbbet, és pontosan hányat 2016-ban?
+
+SELECT description_table.description AS "A bûneset típusa", COUNT(description_table.id) AS "Elõfordulások száma"
+FROM crimes_table, description_table
+WHERE crimes_table.description = description_table.id
+GROUP BY description_table.description
+ORDER BY COUNT(description_table.id) DESC LIMIT 3;
+
+
+# 2. A hét egyes napjain hány bûnesetet követnek el?
+
+SELECT day_of_week AS "A hét napjai", COUNT(*) AS "Az elkövetett bûnesetek száma"
+FROM crimes_table
+GROUP BY (day_of_week)
+ORDER BY day_of_week;
+
+
+# 3. Van-e olyan bûneset, amelyhez több esemény is kapcsolódik az adatbázisban?
+
+SELECT case_num, COUNT(case_num)
+FROM crimes_table
+GROUP BY (case_num)
+HAVING COUNT(case_num) > 1;
+
+
+# 4. Melyik egy nap legveszélyesebb idõszaka (órája) és hány bûneset történik ekkor?
+
+SELECT EXTRACT(HOUR FROM occured_time) AS "Idõszak kezdete",
+		EXTRACT(HOUR FROM occured_time)+1 AS "Idõszak vége",
+		COUNT(EXTRACT(HOUR FROM occured_time)) 
+FROM crimes_table
+GROUP BY(EXTRACT(HOUR FROM occured_time))
+ORDER BY COUNT(EXTRACT(HOUR FROM occured_time)) DESC LIMIT 1;
+
+
+# 5. Kit és milyen telefonszámon kell hívnia annak, aki panaszt akar tenni a rendõrség gyatra munkája miatt,
+mivel nem találták meg a 2016 január 5.-én 00:00 és 07:00 között ellopott gépjármûvét?
+(A kerületi képviselõk az illetékesek a rendõrök helyrerakásában.)
+
+SELECT name, phone 
+FROM description_table, crimes_table, city_council_table
+WHERE description_table.id = crimes_table.description 
+		AND crimes_table.city_council = city_council_table.id
+		AND description_table.description = 'STOLEN VEHICLE'
+		AND occured_date = DATE('2016-01-05')
+		AND occured_time 
+				BETWEEN '00:00'
+				AND '07:00';
+
+
+######################## Geometriai lekérdezések ###########
+
+
+# 1. Melyik kerületben történt a legkevesebb bûneset, és mennyi?
+
+SELECT area_id+1 AS "District", count(crimes_table.*) AS "Number of occurrences"
+FROM crimes_table, location_table, city_council_table, area_table
+WHERE crimes_table.location = location_table.id
+			AND city_council_table.area_id = area_table.id
+			AND st_contains(area_shape, point)
+GROUP BY city_council_table.id
+ORDER BY count(crimes_table.*) LIMIT 1;
+
+
+# 2. Mutassa meg a QGIS, hogy hol követtek el emberrablást az 1. kerületben?
+
+SELECT point
+FROM crimes_table, location_table, city_council_table, area_table, description_table
+WHERE crimes_table.location = location_table.id
+			AND city_council_table.area_id = area_table.id
+			AND crimes_table.description = description_table.id
+			AND description_table.description = 'KIDNAP'
+			AND area_id = 0
+			AND st_contains(area_shape, point);
+
+
+# 3. Ábrázolja a QGIS, hogy mely körzetekben fordult elõ sikkasztásos bûneset!
+
+SELECT area_shape
+FROM crimes_table, location_table, city_council_table, area_table, description_table
+WHERE crimes_table.location = location_table.id
+			AND city_council_table.area_id = area_table.id
+			AND crimes_table.description = description_table.id
+			AND description_table.description = 'EMBEZZLEMENT'
+			AND st_contains(area_shape, point)
+GROUP BY(area_shape);
+
+
+# 4. Mutassa meg a QGIS azokat az eseteket, amelyek egyik kerület területébe sem estek bele!
+(Vajon outlier vagy lefedési hiba okozza-e az ilyen pontok meglétét?)
+
+SELECT point
+FROM crimes_table, location_table, city_council_table, area_table
+WHERE crimes_table.location = location_table.id
+	AND city_council_table.area_id = area_table.id
+	AND location_table.id NOT IN (SELECT location_table.id
+				      FROM crimes_table, location_table, city_council_table, area_table
+				      WHERE crimes_table.location = location_table.id
+							AND city_council_table.area_id = area_table.id
+							AND st_contains(area_shape, point)
+				      GROUP BY location_table.id)
+GROUP BY point;
+
+
+
+# 5. Mekkora a távolság méterben a legkeletibb és legnyugatibb eset pontjai között?
+
+SELECT st_distance((SELECT location_table.point
+	FROM crimes_table, location_table, city_council_table, area_table
+	WHERE crimes_table.location = location_table.id
+		AND city_council_table.area_id = area_table.id
+	GROUP BY location_table.point
+	ORDER BY st_X(location_table.point) LIMIT 1),
+		(SELECT location_table.point
+		 FROM crimes_table, location_table, city_council_table, area_table
+		 WHERE crimes_table.location = location_table.id
+			AND city_council_table.area_id = area_table.id
+		 GROUP BY location_table.point
+		 ORDER BY st_X(location_table.point) DESC LIMIT 1), TRUE) AS geom
+FROM crimes_table, location_table, city_council_table, area_table
+WHERE crimes_table.location = location_table.id
+	AND city_council_table.area_id = area_table.id
+GROUP BY geom;
+
+
+
+
